@@ -726,6 +726,54 @@ def BuildExtension(ext_json):
             e[start : (start + 0x02)] = BuildSt(st)
             start += 0x02
 
+    if atype == "DisplayID Extension":
+        rev_map = {
+                "v1.2": 0x12,
+                "v1.3": 0x13,
+                "v2.0": 0x20,
+                "v2.1": 0x21,
+            }
+        use_cases = [
+                "Extension Section",
+                "Test Structure",
+                "Generic",
+                "Television",
+                "Productivity",
+                "Gaming",
+                "Presentation",
+                "Virtual Reality",
+                "Augmented Reality",
+            ]
+
+        did_exts = ext_json["Extensions"]
+        blocks: list[dict] = ext_json["Blocks"]
+
+        e[0] = 0x70
+        e[1] = rev_map[ext_json["Version"]]
+        e[2] = ext_json["Length"]
+        e[3] = use_cases.index(ext_json["Primary Use Case"])
+        e[4] = len(did_exts)
+
+        def BuildDIDBlock(blk):
+            out = [0] * (3 + blk["len"])
+            out[0] = blk["tag"]
+            out[1] = blk["revision"]
+            out[2] = blk["len"]
+            out[3:] = blk["data"]
+            return out
+
+        start = 5
+        for blk in blocks:
+            length = 3 + blk["len"]
+            e[start:start + length] = BuildDIDBlock(blk)
+            start += length
+
+        sum = 0
+        for c in e[1:e[2] + 5]:
+            sum += c
+
+        e[126] = 256 - (sum % 256)
+
     elif atype == "CEA-861 Series Timing Extension":
         e[0] = 0x02
         e[1] = ext_json["Version"]

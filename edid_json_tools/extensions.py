@@ -28,6 +28,7 @@ TYPE_LOCALIZED_STRING = "Localized String Extension (LS-EXT)"
 TYPE_DIGITAL_PACKET_VIDEO_LINK = "Digital Packet Video Link Extension " "(DPVL-EXT)"
 TYPE_EXTENSION_BLOCK_MAP = "Extension Block Map"
 TYPE_MANUFACTURER_EXTENSION = "Extension defined by monitor manufacturer"
+TYPE_DISPLAYID = "DisplayID Extension"
 TYPE_UNKNOWN = "Unknown Extension type"
 
 
@@ -58,6 +59,8 @@ def GetExtension(edid: ByteList, index: int, version: EdidVersion):
         return LocalizedStringExtension(block)
     elif tag == 0x60:
         return DPVLExtension(block)
+    elif tag == 0x70:
+        return DisplayIdExtension(block)
     elif tag == 0xF0:
         return ExtensionBlockMap(block)
     elif tag == 0xFF:
@@ -115,6 +118,74 @@ class Extension(object):
         Args:
           index: The integer index of the extension being checked.
         """
+
+
+class DisplayIdExtension(Extension):
+    """Defines a DisplayID Extension"""
+
+    def __init__(self, block):
+        """Create a DisplayIdExtension object.
+
+        Args:
+          block: The list of bytes that make up the extension.
+        """
+        Extension.__init__(self, block, TYPE_DISPLAYID)
+        self._rev = block[1]
+        self._length = block[2]
+        self._primary_use = block[3]
+        self._ext_count = block[4]
+        self._data = block[5:5+self._length]
+        self._checksum_digit = self._block[-1]
+        self._blocks = []
+
+        def block_length(blk):
+            return 3 + blk["len"]
+
+        def read_block(data):
+            blk = {}
+            blk["tag"] = data[0]
+            blk["revision"] = data[1]
+            blk["len"] = data[2]
+            blk["data"] = data[3:block_length(blk)]
+            return blk
+
+        data = list(self._data)
+        while True:
+            blk = read_block(data)
+            data = data[block_length(blk):]
+            if len(blk["data"]) == 0 or len(data) == 0:
+                break
+            self._blocks.append(blk)
+
+    @property
+    def revision(self):
+        return self._block[1]
+
+    @property
+    def primary_use(self):
+        return self._block[3]
+
+    @property
+    def checksum(self):
+        length = self._block[2]
+        return self._block[5 + length]
+
+    @property
+    def calculated_checksum(self):
+        sum = 0
+        length = self._block[2] + 5
+        for c in self._block[1:length]:
+            sum += c
+
+        return 256 - (sum % 256)
+
+    @property
+    def length(self):
+        return self._length
+
+    @property
+    def blocks(self):
+        return self._blocks
 
 
 class TimingExtension(Extension):

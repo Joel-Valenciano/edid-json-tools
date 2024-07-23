@@ -371,6 +371,36 @@ def AnalyzeExtension(e: edid.Edid, block_num: int):
     ext = e.GetExtension(block_num)
     mydict: Dict[str, Any] = {"Type": ext.type}
 
+    if ext.type == extensions.TYPE_DISPLAYID:
+        assert isinstance(ext, extensions.DisplayIdExtension)
+        rev_map = {
+            0x12: "v1.2",
+            0x13: "v1.3",
+            0x20: "v2.0",
+            0x21: "v2.1",
+        }
+        use_case_map = {
+            0: "Extension Section",
+            1: "Test Structure",
+            2: "Generic",
+            3: "Television",
+            4: "Productivity",
+            5: "Gaming",
+            6: "Presentation",
+            7: "Virtual Reality",
+            8: "Augmented Reality",
+        }
+
+        mydict.update({
+            "Extensions": [],
+            "Length": ext.length,
+            "Version": rev_map[ext.revision],
+            "Checksum": hex(ext.checksum),
+            "Calculated": hex(ext.calculated_checksum),
+            "Blocks": ext.blocks,
+            "Primary Use Case": use_case_map[ext.primary_use],
+        })
+
     if ext.type == extensions.TYPE_CEA_861:
         assert isinstance(ext, extensions.CEAExtension)
 
