@@ -8,38 +8,40 @@ import tempfile
 import difflib
 import copy
 import queue
+from typing import Union
 
 opt_yuv = click.option(
     "-y", "--apply-yuv-fix",
     is_flag=True,
-    help="""
-        Remove YCbCr support flags from edid (Fixes black
-        screen issues on some headsets)
-        """)
+    help="Remove YCbCr support flags from edid (Fixes black " +
+        "screen issues on some headsets)"
+)
 
 opt_hmd = click.option(
     "-m", "--apply-hmd-fix",
     is_flag=True,
-    help="""Append a Microsoft HMD VSDB to edid (Allows some headsets
-        without the non-desktop quirk to be detected as non-desktop)
-        """)
+    help="Append a Microsoft HMD VSDB to edid (Allows some headsets " +
+        "without the non-desktop quirk to be detected as non-desktop)"
+)
 
 opt_did = click.option(
     "-d", "--check-displayid",
     is_flag=True,
-    help="""Correct checksum in DisplayID block (Fix
-    for buggy EDIDs in some headsets)
-    """)
+    help="Correct checksum in DisplayID block (Fix " +
+    "for buggy EDIDs in some headsets)"
+)
 
 opt_debug = click.option(
     "--debug",
     is_flag=True,
-    help="""Print output of edid2json and diff after processing""")
+    help="""Print output of edid2json and diff after processing"""
+)
 
 opt_dry_run = click.option(
     "--dry-run",
     is_flag=True,
-    help="""Run commands, but don't apply output EDID""")
+    help="""Run commands, but don't apply output EDID"""
+)
 
 
 class OverrideOptions:
@@ -119,6 +121,7 @@ def override(card, connector, reset, override_options):
 
         if not override_options.dry_run:
             apply_edid(edid_bin, edid_override_path, trigger_hotplug_path)
+
     except PermissionError:
         print("Could not open debugfs files; please run this command as sudo.")
         pass
@@ -132,12 +135,11 @@ def override(card, connector, reset, override_options):
 @click.argument("edid_output", type=click.Path(), default="out.edid")
 @process_options
 def test(edid_input, edid_output, override_options: OverrideOptions):
-    edid_input_path = Path(edid_input)
     edid_output_path = Path(edid_output)
     print("Testing with EDID file at {} ..."
           .format("stdin" if edid_input == '-' else edid_input))
 
-    edid_bin = patch_edid(edid_input_path, override_options)
+    edid_bin = patch_edid(edid_input, override_options)
     if not override_options.dry_run:
         if edid_bin is None:
             return
@@ -150,14 +152,22 @@ def test(edid_input, edid_output, override_options: OverrideOptions):
 @cli.command(help="Dump the EDID for a connector")
 @click.argument("card", type=int)
 @click.argument("connector")
-@click.argument("output_path", type=click.Path())
+@click.argument("output_path", type=click.File("wb"))
 @click.option("--json", is_flag=True, default=False, help="Dump edid contents as json")
 def dump(card, connector, output_path, json):
     edid_path = "/sys/class/drm/card{}-{}/edid".format(card, connector)
     edid_bin = None
-    print("Dumping {} to {}..."
-          .format("JSON" if json else "EDID", Path(output_path).absolute()))
+
+    print("Using card {}, connector '{}'".format(card, connector))
+
+    # Read the binary to see if edid is possibly valid, and to just write it
+    # if not using json
+    edid_bin = read_edid_bin(edid_path)
+    if not edid_bin:
+        return None
+
     if json:
+        print("Dumping EDID to {} as JSON...".format(output_path.name))
         edid2json_path = "edid2json"
 
         print("Running edid2json.py...")
@@ -168,50 +178,57 @@ def dump(card, connector, output_path, json):
             return
 
         assert p1.stdout is not None
-        with click.open_file(output_path, "w") as f:
-            f.write(p1.stdout.read().decode())
-        pass
+        output_path.write(p1.stdout.read())
     else:
-        with click.open_file(edid_path, "rb") as edid:
-            edid_bin = edid.read()
-            length = len(edid_bin)
-            if length == 0 or length % 128 != 0:
-                print("EDID Missing; is display plugged in?")
-                return
+        print("Dumping EDID to {}...".format(output_path.name))
+        output_path.write(edid_bin)
 
-        with click.open_file(output_path, "wb") as output:
-            output.write(edid_bin)
-
+    output_path.flush()
     print("Done.")
 
 
-def patch_edid(edid_path: Path, options: OverrideOptions):
-    """This function handles most of the processing"""
-    edid_path_str = str(edid_path.absolute())
-    if not edid_path.exists():
-        print("EDID does not exist at path {}".format(edid_path_str))
+def read_edid_bin(edid_path: Union[str, Path]):
+    edid_path_str = str(Path(edid_path).absolute())
+    regular_file = not edid_path_str.startswith("/sys")
+
+    try:
+        with click.open_file(edid_path_str, "rb") as edid:
+            edid_bin = edid.read()
+            length = len(edid_bin)
+            if length == 0 or length % 128 != 0:
+                if regular_file:
+                    print("File at {} is not an EDID file.".format(edid_path))
+                else:
+                    print("EDID Missing; is display plugged in?")
+                return
+
+            return edid_bin
+
+    except Exception as e:
+        print(e)
         return None
 
-    with click.open_file(edid_path_str, "rb") as edid:
-        edid_bin = edid.read()
-        length = len(edid_bin)
-        if length == 0 or length % 128 != 0:
-            if edid_path_str.startswith("/sys"):
-                print("EDID Missing; is display plugged in?")
-            else:
-                print("File at {} is not an EDID file.".format(edid_path))
-            return None
+
+def patch_edid(edid_path: Union[str, Path], options: OverrideOptions):
+    """This function handles most of the processing"""
+    # Read edid to see if it is possibly valid
+    edid_bin = read_edid_bin(edid_path)
+    if not edid_bin:
+        return None
 
     edid2json_path = "edid2json"
     json2edid_path = "json2edid"
 
-    print("Running edid2json.py...")
-    p1 = subprocess.Popen(args=[edid2json_path, edid_path], stdout=subprocess.PIPE)
-    p1.wait(5)
-    if p1.returncode != 0:
-        print("edid2json.py returned {}.".format(p1.returncode))
-        return
+    def run_e2j(edid_path):
+        print("Running edid2json.py...")
+        p1 = subprocess.Popen(args=[edid2json_path, edid_path], stdout=subprocess.PIPE)
+        p1.wait(5)
+        if p1.returncode != 0:
+            print("edid2json.py returned {}.".format(p1.returncode))
 
+        return p1
+
+    p1 = run_e2j(edid_path)
     assert p1.stdout is not None
 
     j_orig = json.loads(p1.stdout.read().decode())
@@ -232,16 +249,16 @@ def patch_edid(edid_path: Path, options: OverrideOptions):
 
     if options.use_cea861():
         if ext_cea861 is None:
-            print("""EDID doesn't contain CEA-861 Extension
-            block, skipping related fixes.""")
+            print("EDID doesn't contain CEA-861 Extension block, " +
+            "skipping related fixes.")
         else:
             print("Checking CEA-861 Extension block...")
             apply_cea861_fixes(ext_cea861, options, fix_counter)
 
     if options.use_displayid():
         if ext_displayid is None:
-            print("""EDID does not contain DisplayID Extension
-            block, skipping related fixes.""")
+            print("EDID does not contain DisplayID Extension block, " +
+            "skipping related fixes.")
         else:
             print("Checking DisplayID Extension block...")
             apply_displayid_fixes(ext_displayid, options, fix_counter)
@@ -259,9 +276,8 @@ def patch_edid(edid_path: Path, options: OverrideOptions):
     tmp_edid = tempfile.NamedTemporaryFile()
     tmp_json = tempfile.NamedTemporaryFile("w+")
 
-    print("Running json2edid.py...")
-
     def run_j2e(j):
+        print("Running json2edid.py...")
         tmp_json.seek(0)
         json.dump(j, tmp_json, indent=2)
         tmp_json.flush()
@@ -276,15 +292,15 @@ def patch_edid(edid_path: Path, options: OverrideOptions):
             return None
         return j2e
 
-    p3 = run_j2e(j)
-    assert p3 and p3.stdout
-    if p3 is None:
+    p2 = run_j2e(j)
+    assert p2 and p2.stdout
+    if p2 is None:
         print("Error while patching edid, quitting...")
         return None
 
     if options.debug:
         # TODO: Add hexdump for original
-        print("json2edid.py result:\n", p3.stdout.read().decode())
+        print("json2edid.py result:\n", p2.stdout.read().decode())
 
     edid_bin = tmp_edid.read()
     assert len(edid_bin) > 0 and len(edid_bin) % 128 == 0
