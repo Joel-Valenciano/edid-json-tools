@@ -10,6 +10,31 @@ import copy
 import queue
 from typing import Union
 
+"""
+To run this program, you may have to install this package, some examples:
+    python3 -m pip install --editable .[CLI]
+    or
+    pip install --editable .[CLI]
+    or
+    python3 ./setup.py install
+
+Examples of how to run:
+
+    patch_edid override 1 HDMI-A-1 -ymd
+
+    patch_edid override 1 HDMI-A-1 --reset
+
+    patch_edid override 1 HDMI-A-1 -ym
+
+    patch_edid test a.edid -ymd
+
+    patch_edid test a.edid -ymd out.edid
+
+    patch_edid dump 1 HDMI-A-1
+
+    patch_edid dump 1 HDMI-A-1 a.edid
+"""
+
 opt_yuv = click.option(
     "-y", "--apply-yuv-fix",
     is_flag=True,
