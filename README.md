@@ -79,6 +79,17 @@ created, which just wraps what this (now very small) Python script in the root
 directory of the repo does. It uses `argparse` instead of bare `sys.argv` usage,
 so it has not yet been converted to use Click.
 
+### patch_edid
+
+This is a multi-purpose script that uses edid2json and json2edid to modify an
+input binary, either pulled from a file or directly from a connector, making
+it easier to apply different fixes useful for getting XR-related hardware working.
+Sub-commands include:
+
+- override
+- test
+- dump
+
 ## Development
 
 Pull requests happily accepted!
