@@ -1027,7 +1027,7 @@ def BuildSad(sad_json):
         sad[2] = _BuildBitsFromBitmaskList(data_block.AUDIO_BITS, sad_json["Bit depth"])
 
     elif tag <= 0x08 and tag >= 0x02:
-        sad[2] = sad_json["Max bit rate"] // 8
+        sad[2] = int(sad_json["Max bit rate"].split()[0]) // 8
 
     elif tag <= 0x0E and tag <= 0x09:
         sad[2] = sad_json["Value"]
