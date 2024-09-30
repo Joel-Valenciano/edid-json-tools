@@ -275,10 +275,22 @@ def patch_edid(edid_path: Union[str, Path], options: OverrideOptions):
     if options.use_cea861():
         if ext_cea861 is None:
             print("EDID doesn't contain CEA-861 Extension block, " +
-            "skipping related fixes.")
-        else:
-            print("Checking CEA-861 Extension block...")
-            apply_cea861_fixes(ext_cea861, options, fix_counter)
+            "creating empty one.")
+            ext_cea861 = {
+                "Basic audio": False,
+                "Native DTD count": 0,
+                "Descriptors": [],
+                "Type": TYPE_CEA861,
+                "Data blocks": [],
+                "Version": 3,
+                "Underscan": False,
+                "YCbCr 4:2:2": False,
+                "YCbCr 4:4:4": False
+            }
+            j["Extensions"].append(ext_cea861)
+
+        print("Checking CEA-861 Extension block...")
+        apply_cea861_fixes(ext_cea861, options, fix_counter)
 
     if options.use_displayid():
         if ext_displayid is None:
