@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from sys import stdout
 import click
 from pathlib import Path
 import subprocess
@@ -9,6 +10,10 @@ import difflib
 import copy
 import queue
 from typing import Union
+from traceback import print_exception
+
+EDID2JSON = "edid2json"
+JSON2EDID = "json2edid"
 
 """
 To run this program, you may have to install this package, some examples:
@@ -122,8 +127,9 @@ def cli():
 @click.argument("card", type=int)
 @click.argument("connector")
 @click.option("--reset", is_flag=True, help="Reset edid override")
+@click.option("output_path", "--output", type=click.Path(exists=False), help="Output to file instead of directly to connector")
 @process_options
-def override(card, connector, reset, override_options):
+def override(card, connector, reset, override_options, output_path):
     print("Using card {}, connector '{}'".format(card, connector))
 
     sysfs_path = Path("/sys/class/drm/card{}-{}".format(card, connector))
@@ -141,8 +147,16 @@ def override(card, connector, reset, override_options):
         else:
             print("Overriding...")
             edid_bin = patch_edid(edid_path, override_options)
+
             if edid_bin is None:
                 return
+
+        if output_path is not None:
+            with click.open_file(output_path, "wb") as output:
+                output.write(edid_bin)
+                output.flush()
+
+            return
 
         if not override_options.dry_run:
             apply_edid(edid_bin, edid_override_path, trigger_hotplug_path)
@@ -241,22 +255,19 @@ def patch_edid(edid_path: Union[str, Path], options: OverrideOptions):
     if not edid_bin:
         return None
 
-    edid2json_path = "edid2json"
-    json2edid_path = "json2edid"
-
     def run_e2j(edid_path):
         print("Running edid2json.py...")
-        p1 = subprocess.Popen(args=[edid2json_path, edid_path], stdout=subprocess.PIPE)
-        p1.wait(5)
-        if p1.returncode != 0:
-            print("edid2json.py returned {}.".format(p1.returncode))
+        try:
+            p = subprocess.Popen(args=[EDID2JSON, edid_path], stdout=subprocess.PIPE)
+            ret = p.wait(5)
+        except Exception as e:
+            print_exception(e, file=stdout)
 
-        return p1
+        print("json2edid.py returned {}".format(ret))
+        return p.stdout.read().decode()
 
-    p1 = run_e2j(edid_path)
-    assert p1.stdout is not None
+    j_orig = json.loads(run_e2j(edid_path))
 
-    j_orig = json.loads(p1.stdout.read().decode())
     j = copy.deepcopy(j_orig)
 
     ext_cea861 = None
@@ -301,31 +312,26 @@ def patch_edid(edid_path: Union[str, Path], options: OverrideOptions):
     tmp_edid = tempfile.NamedTemporaryFile()
     tmp_json = tempfile.NamedTemporaryFile("w+")
 
-    def run_j2e(j):
+    def run_json2edid(j):
         print("Running json2edid.py...")
-        tmp_json.seek(0)
         json.dump(j, tmp_json, indent=2)
         tmp_json.flush()
-        tmp_json.seek(0)
-        j2e = subprocess.Popen(
-            args=[json2edid_path, tmp_json.name, tmp_edid.name],
-            stdout=subprocess.PIPE)
-        j2e.wait(5)
+        ret = None
+        out = None
+        try:
+            p = subprocess.Popen([JSON2EDID, tmp_json.name, tmp_edid.name], stdout=subprocess.PIPE)
+            ret = p.wait(5)
+        except Exception as e:
+            print_exception(e, file=stdout)
 
-        if j2e.returncode != 0:
-            print("json2edid.py returned {}.".format(j2e.returncode))
-            return None
-        return j2e
+        out = p.stdout.read().decode()
+        print("json2edid.py returned {}, output:{}".format(ret, ("\n{}" + out) if len(out) > 0 else ""))
+        print("=" * 40)
+        return ret
 
-    p2 = run_j2e(j)
-    assert p2 and p2.stdout
-    if p2 is None:
+    if run_json2edid(j) != 0:
         print("Error while patching edid, quitting...")
         return None
-
-    if options.debug:
-        # TODO: Add hexdump for original
-        print("json2edid.py result:\n", p2.stdout.read().decode())
 
     edid_bin = tmp_edid.read()
     assert len(edid_bin) > 0 and len(edid_bin) % 128 == 0

@@ -1095,6 +1095,7 @@ def BuildEdid(edid_json):
 
     # Extension count
     edid[126] = ext_count
+    assert len(edid) % 128 == 0, "Size {} is not a multiple of 128, was a block was filled past capacity?".format(len(edid))
 
     # Set checksums for each 128-byte block
     for x in range(0, len(edid), 128):
