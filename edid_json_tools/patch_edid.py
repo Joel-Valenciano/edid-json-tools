@@ -10,7 +10,7 @@ import difflib
 import copy
 import queue
 from typing import Union
-from traceback import print_exception
+from traceback import format_exc
 
 EDID2JSON = "edid2json"
 JSON2EDID = "json2edid"
@@ -261,7 +261,7 @@ def patch_edid(edid_path: Union[str, Path], options: OverrideOptions):
             p = subprocess.Popen(args=[EDID2JSON, edid_path], stdout=subprocess.PIPE)
             ret = p.wait(5)
         except Exception as e:
-            print_exception(e, file=stdout)
+            print(format_exc())
 
         print("json2edid.py returned {}".format(ret))
         return p.stdout.read().decode()
@@ -322,7 +322,7 @@ def patch_edid(edid_path: Union[str, Path], options: OverrideOptions):
             p = subprocess.Popen([JSON2EDID, tmp_json.name, tmp_edid.name], stdout=subprocess.PIPE)
             ret = p.wait(5)
         except Exception as e:
-            print_exception(e, file=stdout)
+            print(format_exc())
 
         out = p.stdout.read().decode()
         print("json2edid.py returned {}, output:{}".format(ret, ("\n{}" + out) if len(out) > 0 else ""))
